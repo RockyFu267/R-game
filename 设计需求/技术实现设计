@@ -1,0 +1,1425 @@
+可以。现在开始进入 **技术实现设计 V0.1**。这一阶段的目标不是“写代码越多越好”，而是把前面的设计翻译成一个**稳定、可扩展、能快速调试的工程骨架**。
+
+我先给结论：
+
+> **V0.1 最适合做成 Web 单机应用，核心引擎用 TypeScript，内容数据用 YAML/JSON，前端只负责渲染，所有游戏逻辑放在独立 Engine 层。**
+
+这样最适合我们现在这个项目，也最方便以后接 AI。
+
+---
+
+# 一、技术栈建议
+
+我建议：
+
+```text
+Frontend
+React + TypeScript + Vite
+
+Game Engine
+Pure TypeScript
+
+Content
+YAML
+
+Runtime State
+TypeScript Objects
+
+Save
+JSON + LocalStorage
+后续可换 IndexedDB / 文件
+
+Dev Tools
+React Dev Panel
+```
+
+为什么我不建议第一版上 Unity / Godot：
+
+因为我们现在是：
+
+> **纯文字 + 状态机 + Event + Loop + Notebook**
+
+真正复杂的是逻辑，不是画面。
+
+Web 的优势是：
+
+* 开发快
+* 调试状态方便
+* JSON/YAML天然适配
+* 浏览器直接运行
+* UI改起来快
+* 后续部署简单
+* 以后接 LLM/API 非常方便
+* 游戏引擎逻辑可以和 UI 完全解耦
+
+以后真的想做 Steam 桌面版，可以：
+
+```text
+Web版本
+↓
+Tauri
+```
+
+直接打包桌面客户端。
+
+所以现在不用操心。
+
+---
+
+# 二、整个项目不要做成“React游戏”
+
+这一点非常重要。
+
+不要让业务逻辑散落在：
+
+```text
+Button onClick
+useEffect
+React Component
+```
+
+否则半年以后必炸。
+
+我建议结构：
+
+```text
+UI
+        ↓
+Game Controller
+        ↓
+Game Engine
+        ↓
+Domain Systems
+        ↓
+Game State
+        ↓
+Content Data
+```
+
+React只能干：
+
+> 展示。
+
+绝不能决定：
+
+> 这个NPC该不该死。
+
+---
+
+# 三、项目目录
+
+我建议第一版直接这样：
+
+```text
+game/
+│
+├── src/
+│
+│   ├── engine/
+│   │   ├── GameEngine.ts
+│   │   ├── GameController.ts
+│   │   │
+│   │   ├── scene/
+│   │   │   ├── SceneResolver.ts
+│   │   │   └── SceneTypes.ts
+│   │   │
+│   │   ├── action/
+│   │   │   ├── ActionResolver.ts
+│   │   │   └── ActionTypes.ts
+│   │   │
+│   │   ├── event/
+│   │   │   ├── EventEngine.ts
+│   │   │   ├── EventQueue.ts
+│   │   │   └── EventTypes.ts
+│   │   │
+│   │   ├── effect/
+│   │   │   ├── EffectEngine.ts
+│   │   │   └── EffectTypes.ts
+│   │   │
+│   │   ├── story/
+│   │   │   ├── StoryResolver.ts
+│   │   │   └── StoryTypes.ts
+│   │   │
+│   │   ├── knowledge/
+│   │   │   ├── KnowledgeResolver.ts
+│   │   │   └── KnowledgeTypes.ts
+│   │   │
+│   │   ├── loop/
+│   │   │   ├── LoopManager.ts
+│   │   │   └── LoopTypes.ts
+│   │   │
+│   │   ├── time/
+│   │   │   └── GameClock.ts
+│   │   │
+│   │   └── condition/
+│   │       └── ConditionEvaluator.ts
+│   │
+│   ├── state/
+│   │   ├── GameState.ts
+│   │   ├── WorldState.ts
+│   │   ├── MetaState.ts
+│   │   └── StateFactory.ts
+│   │
+│   ├── content/
+│   │   ├── loader/
+│   │   │   └── ContentLoader.ts
+│   │   └── registry/
+│   │       └── ContentRegistry.ts
+│   │
+│   ├── save/
+│   │   └── SaveManager.ts
+│   │
+│   ├── debug/
+│   │   ├── GameLogger.ts
+│   │   └── DebugStore.ts
+│   │
+│   ├── ui/
+│   │   ├── GameScreen.tsx
+│   │   ├── ScenePanel.tsx
+│   │   ├── ActionPanel.tsx
+│   │   ├── NotebookPanel.tsx
+│   │   └── DebugPanel.tsx
+│   │
+│   └── main.tsx
+│
+├── content/
+│   ├── locations/
+│   ├── actions/
+│   ├── events/
+│   ├── npcs/
+│   ├── clues/
+│   ├── knowledge/
+│   ├── story/
+│   ├── narrative/
+│   └── loops/
+│
+└── saves/
+```
+
+这样未来规模起来以后，也不需要推倒重来。
+
+---
+
+# 四、最核心的数据：GameState
+
+我们前面设计的所有东西，最终都汇总到这里。
+
+我建议：
+
+```ts
+interface GameState {
+  runtime: RuntimeState;
+  world: WorldState;
+  meta: MetaState;
+}
+```
+
+## Runtime
+
+```ts
+interface RuntimeState {
+  currentLocationId: string;
+  currentStoryNodeId: string;
+
+  loopId: number;
+
+  gameTime: number;
+
+  eventQueue: QueuedEvent[];
+
+  currentScene?: SceneViewModel;
+}
+```
+
+`gameTime` 不建议一开始用 Date。
+
+直接用：
+
+```text
+从循环开始经过了多少分钟
+```
+
+例如：
+
+```text
+23:10 = 0
+23:30 = 20
+23:40 = 30
+```
+
+最容易计算。
+
+UI再转换成人类时间。
+
+---
+
+# 五、World State
+
+```ts
+interface WorldState {
+  flags: Record<string, boolean>;
+
+  variables: Record<string, number | string>;
+
+  objects: Record<string, ObjectState>;
+
+  npcs: Record<string, NPCState>;
+
+  inventory: string[];
+
+  discoveredClues: string[];
+
+  triggeredEvents: Record<string, EventRuntimeState>;
+}
+```
+
+例如：
+
+```json
+{
+  "flags": {
+    "warehouse_locked": true,
+    "power_on": true,
+    "knock_triggered": false
+  }
+}
+```
+
+第一版不要追求超级严格的复杂数据结构。
+
+先能跑。
+
+---
+
+# 六、Meta State
+
+这个对我们的 Loop 最重要。
+
+```ts
+interface MetaState {
+  memories: string[];
+
+  knowledge: Record<string, KnowledgeState>;
+
+  claims: Record<string, ClaimState>;
+
+  timelineHistory: LoopTimeline[];
+
+  echoes: string[];
+
+  anomaly: {
+    pressure: number;
+    stage: number;
+  };
+
+  storyProgress: string[];
+
+  loopHistory: LoopSignature[];
+}
+```
+
+所以循环重置时：
+
+```text
+World State
+重建
+
+Meta State
+保留
+```
+
+从结构层就保证不会混。
+
+---
+
+# 七、Location 数据
+
+内容层用 YAML。
+
+例如：
+
+```yaml
+id: guard_room
+name: 值班室
+
+base_description:
+  - guard_room_base
+
+objects:
+  - radio
+  - desk
+  - duty_log
+
+exits:
+  - target: corridor
+    label: 前往走廊
+    cost: 2
+```
+
+Location不要塞剧情。
+
+它只是空间。
+
+---
+
+# 八、Action 数据
+
+建议：
+
+```yaml
+id: investigate_radio
+type: INVESTIGATE
+
+label: 调查无线电
+
+location: guard_room
+target: radio
+
+visibility:
+  conditions:
+    - type: flag_equals
+      key: radio_destroyed
+      value: false
+
+cost:
+  time: 5
+
+effects:
+  - type: set_flag
+    key: radio_investigated
+    value: true
+
+result:
+  narrative: investigate_radio_default
+```
+
+Memory Action：
+
+```yaml
+id: remember_knock_time
+type: MEMORY
+
+label: "【记忆】23:30仓库会传来敲门声"
+
+conditions:
+  - type: memory_exists
+    id: knows_knock_time
+```
+
+完全复用同一套结构。
+
+---
+
+# 九、Condition 不要直接写 JavaScript
+
+这个一定要提前限制。
+
+不要内容里写：
+
+```yaml
+condition: "state.world.flags.x && time > 20"
+```
+
+短期方便，长期非常难维护。
+
+最好结构化：
+
+```yaml
+conditions:
+  all:
+    - type: flag_equals
+      key: warehouse_locked
+      value: true
+
+    - type: time_gte
+      value: 20
+```
+
+或者：
+
+```yaml
+conditions:
+  any:
+    - type: memory_exists
+      id: knows_knock_time
+
+    - type: clue_discovered
+      id: clue_knock
+```
+
+统一：
+
+```text
+ALL
+ANY
+NOT
+```
+
+这样足够覆盖绝大部分剧情需求。
+
+---
+
+# 十、ConditionEvaluator
+
+所有系统共用同一个。
+
+```text
+Action
+Event
+Story Node
+Clue
+Memory
+Scene Block
+```
+
+全部调用：
+
+```ts
+conditionEvaluator.evaluate(condition, state)
+```
+
+这是必须统一的。
+
+否则以后你会出现：
+
+```text
+Action自己的判断逻辑
+Event自己的判断逻辑
+Story自己的判断逻辑
+```
+
+最后行为不一致。
+
+---
+
+# 十一、Effect Engine也必须只有一个
+
+这同样是核心。
+
+```ts
+applyEffects(effects, gameState)
+```
+
+V0.1先支持这些：
+
+```text
+SET_FLAG
+SET_VARIABLE
+ADD_VARIABLE
+
+ADD_ITEM
+REMOVE_ITEM
+
+DISCOVER_CLUE
+
+UNLOCK_MEMORY
+SET_KNOWLEDGE
+
+MOVE_NPC
+SET_NPC_STATE
+
+SET_OBJECT_STATE
+
+SCHEDULE_EVENT
+
+CHANGE_STORY_NODE
+
+CHANGE_ANOMALY
+
+REQUEST_LOOP
+```
+
+足够了。
+
+Action 和 Event 都调用它。
+
+---
+
+# 十二、Event Engine
+
+核心接口可以非常简单：
+
+```ts
+eventEngine.processTrigger({
+  type: "TIME_ADVANCED",
+  from: 15,
+  to: 20
+});
+```
+
+它负责：
+
+```text
+查找候选 Event
+↓
+ConditionEvaluator
+↓
+RepeatPolicy
+↓
+加入 EventQueue
+↓
+Priority排序
+↓
+逐个执行
+↓
+EffectEngine
+↓
+生成 Presentation
+```
+
+---
+
+# 十三、时间推进必须集中处理
+
+不要：
+
+```ts
+state.gameTime += 5;
+```
+
+散落在代码里。
+
+统一：
+
+```ts
+gameClock.advance(5)
+```
+
+里面负责：
+
+```text
+oldTime
+↓
+newTime
+↓
+检查 oldTime → newTime 之间所有 Scheduled Event
+↓
+处理Event
+```
+
+例如：
+
+```text
+当前 23:27
+Action耗时5分钟
+```
+
+实际不能直接：
+
+```text
+23:32
+```
+
+因为23:30可能有 Event。
+
+应该：
+
+```text
+23:27
+↓
+23:30 Event
+↓
+处理
+↓
+23:32
+```
+
+这个实现细节非常重要。
+
+---
+
+# 十四、Scene Resolver
+
+Scene Resolver不要修改状态。
+
+这是一个关键工程规则：
+
+> **Resolver必须尽量是纯函数。**
+
+输入：
+
+```text
+GameState
++
+Location
++
+Content
+```
+
+输出：
+
+```text
+SceneViewModel
+```
+
+例如：
+
+```ts
+interface SceneViewModel {
+  locationId: string;
+
+  title: string;
+
+  gameTime: number;
+
+  narrativeBlocks: string[];
+
+  actions: ResolvedAction[];
+
+  npcs: string[];
+
+  exits: ResolvedExit[];
+}
+```
+
+这样调试极其容易：
+
+```text
+给同一个State
+↓
+永远得到同一个Scene
+```
+
+不要让：
+
+```text
+resolveScene()
+```
+
+自己偷偷触发剧情。
+
+进入场景 Event 应该由 Controller 先处理。
+
+---
+
+# 十五、GameController 是总调度器
+
+UI只调用：
+
+```ts
+gameController.performAction(actionId)
+```
+
+GameController内部：
+
+```text
+validate Action
+↓
+ActionResolver
+↓
+推进Time
+↓
+EffectEngine
+↓
+EventEngine
+↓
+StoryResolver
+↓
+KnowledgeResolver
+↓
+如果Loop请求存在
+    LoopManager
+↓
+SceneResolver
+↓
+返回新的ViewModel
+```
+
+React根本不用知道背后的东西。
+
+---
+
+# 十六、一次 Action 的完整事务
+
+我建议代码思路甚至直接按照我们之前设计的“原子事务”。
+
+```text
+performAction()
+```
+
+执行：
+
+```text
+1 获取当前State Snapshot
+
+2 再检查Action Conditions
+
+3 开始Action Transaction
+
+4 Time Cost
+
+5 Action Effects
+
+6 Event Processing
+
+7 Knowledge Processing
+
+8 Story Processing
+
+9 Loop Processing
+
+10 Resolve Scene
+
+11 Commit State
+
+12 写 Action/Event Log
+```
+
+以后甚至可以增加：
+
+```text
+rollback
+```
+
+用于出现异常时恢复上一State。
+
+---
+
+# 十七、内容和代码一定分离
+
+这是这个项目能不能长期做下去的关键。
+
+不要：
+
+```ts
+if (location === "warehouse" && time === 20) {
+   ...
+}
+```
+
+绝对不要。
+
+应该：
+
+```yaml
+event:
+  id: knock_event
+
+  trigger:
+    type: TIME
+    at: 20
+
+  conditions:
+    ...
+```
+
+代码只知道：
+
+> TIME Event是什么。
+
+代码不知道：
+
+> 仓库会敲门。
+
+这叫 **Data-Driven**。
+
+我们的项目非常适合这个模式。
+
+---
+
+# 十八、Narrative Block
+
+文字单独存。
+
+比如：
+
+```yaml
+id: warehouse_knock_outside
+
+text: |
+  门板后传来三声轻响。
+
+  间隔很长，像有人在耐心地等着。
+```
+
+而 Event：
+
+```yaml
+presentation:
+  block: warehouse_knock_outside
+```
+
+Scene：
+
+```yaml
+description_blocks:
+  - warehouse_base
+```
+
+以后写剧情的人甚至完全不用碰代码。
+
+---
+
+# 十九、Narrative Block也应该支持Condition
+
+例如：
+
+```yaml
+id: guard_room_chen_present
+
+conditions:
+  - type: npc_at
+    npc: chen
+    location: guard_room
+
+text: |
+  陈坐在桌边。
+```
+
+Scene Resolver：
+
+```text
+Base Blocks
++
+符合条件的Modifier Blocks
++
+Echo Blocks
++
+Anomaly Blocks
+```
+
+拼出来。
+
+---
+
+# 二十、Notebook怎么实现
+
+不要把Notebook当另外一个剧情数据库。
+
+它应该是 **Knowledge/Clue系统的View**。
+
+例如：
+
+```ts
+getNotebookView(state)
+```
+
+生成：
+
+```text
+People
+Timeline
+Findings
+Questions
+```
+
+Clue定义里增加：
+
+```yaml
+notebook:
+  category: timeline
+
+  text: "23:30，仓库方向出现三声敲击。"
+```
+
+Testimony：
+
+```yaml
+notebook:
+  category: people
+  subject: npc_a
+
+  text: "NPC-A声称仓库里不可能有人。"
+```
+
+---
+
+# 二十一、Save格式
+
+MVP直接：
+
+```json
+{
+  "version": "0.1.0",
+
+  "runtime": {},
+  "world": {},
+  "meta": {}
+}
+```
+
+保存到：
+
+```text
+LocalStorage
+```
+
+键：
+
+```text
+horror_game_save_01
+```
+
+足够。
+
+但是必须带：
+
+```text
+saveVersion
+```
+
+因为后面数据结构肯定会变。
+
+---
+
+# 二十二、世界重建
+
+我们需要：
+
+```text
+world-baseline.yaml
+```
+
+例如：
+
+```yaml
+flags:
+  power_on: true
+  warehouse_locked: true
+
+npcs:
+  npc_a:
+    alive: true
+    location: guard_room
+
+objects:
+  radio:
+    state: normal
+```
+
+Loop：
+
+```text
+读取 baseline
+↓
+新建 WorldState
+↓
+应用 Story Meta
+↓
+应用 Echo
+↓
+应用 Anomaly
+```
+
+非常直观。
+
+---
+
+# 二十三、开发模式一定要从第一天做
+
+我建议右侧隐藏一个：
+
+```text
+DEBUG
+```
+
+按键比如：
+
+```text
+F12
+```
+
+不用跟浏览器冲突的话换别的。
+
+里面显示：
+
+```text
+Current Loop
+Game Time
+Current Location
+Current Story Node
+
+World Flags
+
+NPC States
+
+Memory
+
+Knowledge
+
+Anomaly
+
+Pending Events
+```
+
+再有按钮：
+
+```text
++1 min
++5 min
+触发Loop
+跳到Location
+添加Memory
+```
+
+这个工具的重要性可能仅次于Game Engine。
+
+因为我们的游戏状态太多了。
+
+---
+
+# 二十四、日志系统
+
+至少三种：
+
+```text
+ACTION
+EVENT
+LOOP
+```
+
+例如：
+
+```text
+[23:15][ACTION]
+investigate_radio
+
+[23:20][EVENT]
+knock_event CHECK = false
+
+[23:30][EVENT]
+knock_event TRIGGERED
+
+[23:40][LOOP]
+reason=time_limit
+```
+
+调试时可以展开：
+
+```text
+Conditions:
+warehouse_locked == true PASS
+event_triggered == false PASS
+```
+
+这会让排Bug效率高一个数量级。
+
+---
+
+# 二十五、Content Validator
+
+这个我建议 MVP阶段就加一个简单版。
+
+启动游戏时检查：
+
+```text
+Action引用不存在的Location
+Event引用不存在的NPC
+Clue ID重复
+Narrative Block不存在
+Story Node引用不存在
+```
+
+否则以后打错：
+
+```text
+warehouse01
+warehosue01
+```
+
+你能排半天。
+
+所以启动：
+
+```text
+ContentLoader
+↓
+ContentValidator
+↓
+有错直接开发环境报错
+```
+
+---
+
+# 二十六、第一版UI
+
+我建议就：
+
+```text
+┌─────────────────────────────────────────┐
+│  23:17        值班室                    │
+├─────────────────────────┬───────────────┤
+│                         │               │
+│   Narrative             │   Notebook    │
+│                         │               │
+│                         │ 人物          │
+│                         │ 时间线        │
+│                         │ 发现          │
+│                         │ 疑问          │
+│                         │               │
+├─────────────────────────┤               │
+│                         │               │
+│   Actions               │               │
+│                         │               │
+│  [调查无线电]           │               │
+│  [和NPC-A交谈]          │               │
+│  [前往走廊]             │               │
+│                         │               │
+└─────────────────────────┴───────────────┘
+```
+
+够了。
+
+---
+
+# 二十七、开发顺序我建议严格这样
+
+不要同时开十个系统。
+
+### Milestone 1：最小 Scene
+
+做到：
+
+```text
+启动游戏
+↓
+读取Location YAML
+↓
+显示场景文字
+↓
+显示Action
+```
+
+先没有Loop。
+
+---
+
+### Milestone 2：Action + Time
+
+做到：
+
+```text
+点击调查
+↓
+时间 +5
+↓
+Flag改变
+↓
+Scene变化
+```
+
+这时候第一个微观Loop成立。
+
+---
+
+### Milestone 3：Event Engine
+
+加入：
+
+```text
+23:30
+敲门Event
+```
+
+验证：
+
+> 世界会随着游戏时间自行发生事情。
+
+---
+
+### Milestone 4：NPC + Clue
+
+加入：
+
+```text
+NPC-A
+值班记录
+Testimony
+Notebook
+```
+
+第一轮开始像游戏。
+
+---
+
+### Milestone 5：Loop
+
+做到：
+
+```text
+23:40
+↓
+Loop Settlement
+↓
+World Reset
+↓
+Memory保留
+↓
+23:10
+```
+
+这是第一个重大里程碑。
+
+---
+
+### Milestone 6：Memory Action
+
+第二轮：
+
+```text
+【记忆】23:30会敲门
+```
+
+玩家能提前进入仓库。
+
+这时候我们的核心玩法第一次真正成立。
+
+---
+
+### Milestone 7：Anomaly
+
+第三轮：
+
+```text
+23:30事件不再按照原规律发生
+```
+
+Vertical Slice完成。
+
+---
+
+# 二十八、暂时不要做后端
+
+这一点我也建议明确。
+
+V0.1：
+
+```text
+Browser
+├── Engine
+├── Content
+└── Save
+```
+
+全部本地。
+
+不要现在搞：
+
+```text
+Node Backend
+数据库
+用户系统
+账号登录
+云存档
+```
+
+没有意义。
+
+未来要AI的时候再加：
+
+```text
+Frontend
+↓
+Game Engine
+↓
+AI Gateway/API
+```
+
+即可。
+
+---
+
+# 二十九、以后AI怎么接，也提前留接口
+
+虽然现在不做AI，但架构留这个位置：
+
+```text
+NarrativeProvider
+```
+
+接口：
+
+```ts
+interface NarrativeProvider {
+  render(input: NarrativeContext): Promise<string>;
+}
+```
+
+现在：
+
+```text
+TemplateNarrativeProvider
+```
+
+以后：
+
+```text
+LLMNarrativeProvider
+```
+
+这样未来：
+
+```text
+Game Engine
+```
+
+完全不用推翻。
+
+仍然坚持我们AI版的核心原则：
+
+> **引擎决定发生什么，NarrativeProvider决定怎么说。**
+
+这两个阶段就真正接上了。
+
+---
+
+# 三十、我建议技术架构定成这一张图
+
+```text
+                     Content YAML
+                         │
+                  Content Loader
+                         │
+                  Content Registry
+                         │
+                         ▼
+┌─────────────────────────────────────────┐
+│               Game Engine               │
+│                                         │
+│ Condition   Scene     Action            │
+│ Evaluator   Resolver   Resolver          │
+│      │         │          │             │
+│      └─────────┼──────────┘             │
+│                │                        │
+│          Effect Engine                  │
+│                │                        │
+│          Event Engine                   │
+│                │                        │
+│        Knowledge Resolver               │
+│                │                        │
+│          Story Resolver                 │
+│                │                        │
+│           Loop Manager                  │
+│                │                        │
+└────────────────┼────────────────────────┘
+                 │
+                 ▼
+              GameState
+           ┌─────┴─────┐
+           │           │
+        World        Meta
+           │           │
+           └─────┬─────┘
+                 │
+                 ▼
+          Scene View Model
+                 │
+                 ▼
+               React
+        ┌────────┴─────────┐
+        │                  │
+      Game UI           Debug UI
+```
+
+我认为这就是我们的 **Technical Architecture V0.1**。
+
+而且现在已经到了可以真正开始建项目的程度。
+
+下一步我建议不再继续画架构，而是直接做两件非常具体的东西：
+
+> **① 定义第一版完整 TypeScript interfaces / enums**
+> **② 定义 V0.1 所有 YAML Schema**
+
+这一步做完，代码基本就可以正式开仓了。
+
+而且我建议下一轮就直接把这两套数据结构完整写出来，不再停留在概念图。
