@@ -1,0 +1,3020 @@
+可以，直接把这一层定成 **Technical Contract V0.1**。从这里开始，后面的 Engine、ContentLoader、Validator、DebugPanel 都以这份契约为准。
+
+我先锁几个工程约定：**TypeScript 和 YAML 都使用 camelCase 字段；ID 一律 `snake_case`；所有枚举在 YAML 中直接使用 TypeScript 枚举字符串；内容文件永远不允许写 JavaScript 表达式。**
+
+---
+
+# ① TypeScript Interfaces / Enums V0.1
+
+我建议拆成三个文件：
+
+```text
+src/contracts/
+├── common.ts
+├── content.ts
+└── state.ts
+```
+
+## `common.ts`
+
+这是整个引擎最底层的公共契约。
+
+```ts
+// src/contracts/common.ts
+
+// ============================================================
+// IDs
+// ============================================================
+
+export type LocationId = string;
+export type ObjectId = string;
+export type ItemId = string;
+export type NpcId = string;
+export type ActionId = string;
+export type EventId = string;
+export type ClueId = string;
+export type ClaimId = string;
+export type KnowledgeId = string;
+export type MemoryId = string;
+export type StoryNodeId = string;
+export type RequirementId = string;
+export type NarrativeBlockId = string;
+export type LoopConfigId = string;
+
+
+// ============================================================
+// Primitive
+// ============================================================
+
+export type Primitive = string | number | boolean | null;
+
+
+// ============================================================
+// Action
+// ============================================================
+
+export enum ActionType {
+  OBSERVE = "OBSERVE",
+  INVESTIGATE = "INVESTIGATE",
+  TALK = "TALK",
+  INTERACT = "INTERACT",
+  MOVE = "MOVE",
+  WAIT = "WAIT",
+  MEMORY = "MEMORY",
+}
+
+export enum ActionAvailability {
+  AVAILABLE = "AVAILABLE",
+  DISABLED = "DISABLED",
+  HIDDEN = "HIDDEN",
+}
+
+export enum UnavailableBehavior {
+  HIDDEN = "HIDDEN",
+  DISABLED = "DISABLED",
+}
+
+
+// ============================================================
+// Clue / Knowledge
+// ============================================================
+
+export enum ClueType {
+  OBSERVATION = "OBSERVATION",
+  TESTIMONY = "TESTIMONY",
+  EVIDENCE = "EVIDENCE",
+  TEMPORAL = "TEMPORAL",
+  LOOP_DISCREPANCY = "LOOP_DISCREPANCY",
+}
+
+export enum KnowledgeStatus {
+  UNKNOWN = "UNKNOWN",
+  SUSPECTED = "SUSPECTED",
+  SUPPORTED = "SUPPORTED",
+  CONTRADICTED = "CONTRADICTED",
+  CONFIRMED = "CONFIRMED",
+  UNSTABLE = "UNSTABLE",
+}
+
+export enum ClaimStatus {
+  UNKNOWN = "UNKNOWN",
+  SUPPORTED = "SUPPORTED",
+  CONTRADICTED = "CONTRADICTED",
+  DISPUTED = "DISPUTED",
+}
+
+
+// ============================================================
+// Notebook
+// ============================================================
+
+export enum NotebookCategory {
+  PEOPLE = "PEOPLE",
+  TIMELINE = "TIMELINE",
+  FINDINGS = "FINDINGS",
+  QUESTIONS = "QUESTIONS",
+}
+
+
+// ============================================================
+// Event
+// ============================================================
+
+export enum EventTriggerType {
+  ACTION = "ACTION",
+  TIME = "TIME",
+  ENTER_LOCATION = "ENTER_LOCATION",
+  LEAVE_LOCATION = "LEAVE_LOCATION",
+  STATE_CHANGE = "STATE_CHANGE",
+  STORY = "STORY",
+  LOOP = "LOOP",
+  SCHEDULED = "SCHEDULED",
+}
+
+export enum EventMode {
+  INTERRUPTING = "INTERRUPTING",
+  PASSIVE = "PASSIVE",
+}
+
+export enum EventVisibility {
+  VISIBLE = "VISIBLE",
+  HIDDEN = "HIDDEN",
+  CONDITIONAL = "CONDITIONAL",
+}
+
+export enum RepeatPolicy {
+  ONCE_GAME = "ONCE_GAME",
+  ONCE_LOOP = "ONCE_LOOP",
+  ONCE_SCENE = "ONCE_SCENE",
+  REPEATABLE = "REPEATABLE",
+  COOLDOWN = "COOLDOWN",
+}
+
+
+// ============================================================
+// Story
+// ============================================================
+
+export enum StoryNodeType {
+  MAIN = "MAIN",
+  OPTIONAL = "OPTIONAL",
+  LOOP = "LOOP",
+  ENDING = "ENDING",
+  TRANSITION = "TRANSITION",
+}
+
+export enum StoryPersistence {
+  LOOP = "LOOP",
+  META = "META",
+}
+
+
+// ============================================================
+// Loop / Anomaly
+// ============================================================
+
+export enum LoopEndReason {
+  DEATH = "DEATH",
+  TIME_LIMIT = "TIME_LIMIT",
+  CRITICAL_EVENT = "CRITICAL_EVENT",
+  PLAYER_TRIGGER = "PLAYER_TRIGGER",
+  STORY_TRIGGER = "STORY_TRIGGER",
+  DEBUG = "DEBUG",
+}
+
+export enum AnomalyStage {
+  STABLE = "STABLE",
+  SUBTLE = "SUBTLE",
+  DISTORTED = "DISTORTED",
+  UNSTABLE = "UNSTABLE",
+  COLLAPSE = "COLLAPSE",
+}
+
+export enum NpcLoopMemoryLevel {
+  NONE = 0,
+  DEJA_VU = 1,
+  EMOTIONAL_ECHO = 2,
+  FRAGMENT = 3,
+  AWARE = 4,
+}
+
+
+// ============================================================
+// Conditions
+// ============================================================
+
+export enum Comparator {
+  EQ = "EQ",
+  NE = "NE",
+  GT = "GT",
+  GTE = "GTE",
+  LT = "LT",
+  LTE = "LTE",
+}
+
+export type ConditionDefinition =
+  | {
+      op: "ALL";
+      conditions: ConditionDefinition[];
+    }
+  | {
+      op: "ANY";
+      conditions: ConditionDefinition[];
+    }
+  | {
+      op: "NOT";
+      condition: ConditionDefinition;
+    }
+  | {
+      op: "FLAG_EQUALS";
+      key: string;
+      value: boolean;
+    }
+  | {
+      op: "VARIABLE_COMPARE";
+      key: string;
+      comparator: Comparator;
+      value: number;
+    }
+  | {
+      op: "HAS_ITEM";
+      itemId: ItemId;
+    }
+  | {
+      op: "CLUE_DISCOVERED";
+      clueId: ClueId;
+    }
+  | {
+      op: "MEMORY_EXISTS";
+      memoryId: MemoryId;
+    }
+  | {
+      op: "KNOWLEDGE_STATUS";
+      knowledgeId: KnowledgeId;
+      comparator: Comparator;
+      status: KnowledgeStatus;
+    }
+  | {
+      op: "NPC_AT";
+      npcId: NpcId;
+      locationId: LocationId;
+    }
+  | {
+      op: "NPC_ALIVE";
+      npcId: NpcId;
+      value: boolean;
+    }
+  | {
+      op: "OBJECT_PROPERTY_EQUALS";
+      objectId: ObjectId;
+      key: string;
+      value: Primitive;
+    }
+  | {
+      op: "TIME_COMPARE";
+      comparator: Comparator;
+      minute: number;
+    }
+  | {
+      op: "LOOP_COMPARE";
+      comparator: Comparator;
+      value: number;
+    }
+  | {
+      op: "ANOMALY_STAGE";
+      comparator: Comparator;
+      stage: AnomalyStage;
+    }
+  | {
+      op: "EVENT_TRIGGERED";
+      eventId: EventId;
+      scope: "CURRENT_LOOP" | "GAME";
+    }
+  | {
+      op: "STORY_NODE_IS";
+      storyNodeId: StoryNodeId;
+    }
+  | {
+      op: "REQUIREMENT_COMPLETE";
+      requirementId: RequirementId;
+    }
+  | {
+      op: "CURRENT_LOCATION_IS";
+      locationId: LocationId;
+    };
+
+
+// ============================================================
+// Effects
+// ============================================================
+
+export type EffectDefinition =
+  | {
+      type: "SET_FLAG";
+      key: string;
+      value: boolean;
+    }
+  | {
+      type: "SET_VARIABLE";
+      key: string;
+      value: Primitive;
+    }
+  | {
+      type: "ADD_VARIABLE";
+      key: string;
+      delta: number;
+    }
+  | {
+      type: "ADD_ITEM";
+      itemId: ItemId;
+    }
+  | {
+      type: "REMOVE_ITEM";
+      itemId: ItemId;
+    }
+  | {
+      type: "DISCOVER_CLUE";
+      clueId: ClueId;
+    }
+  | {
+      type: "UNLOCK_MEMORY";
+      memoryId: MemoryId;
+    }
+  | {
+      type: "SET_KNOWLEDGE_STATUS";
+      knowledgeId: KnowledgeId;
+      status: KnowledgeStatus;
+    }
+  | {
+      type: "SET_CLAIM_STATUS";
+      claimId: ClaimId;
+      status: ClaimStatus;
+    }
+  | {
+      type: "MOVE_NPC";
+      npcId: NpcId;
+      locationId: LocationId;
+    }
+  | {
+      type: "SET_NPC_ALIVE";
+      npcId: NpcId;
+      value: boolean;
+    }
+  | {
+      type: "SET_NPC_PROPERTY";
+      npcId: NpcId;
+      key: string;
+      value: Primitive;
+    }
+  | {
+      type: "SET_OBJECT_PROPERTY";
+      objectId: ObjectId;
+      key: string;
+      value: Primitive;
+    }
+  | {
+      type: "MOVE_PLAYER";
+      locationId: LocationId;
+    }
+  | {
+      type: "SCHEDULE_EVENT";
+      eventId: EventId;
+      delayMinutes: number;
+    }
+  | {
+      type: "CHANGE_STORY_NODE";
+      storyNodeId: StoryNodeId;
+    }
+  | {
+      type: "CHANGE_ANOMALY_PRESSURE";
+      delta: number;
+    }
+  | {
+      type: "SET_ANOMALY_STAGE";
+      stage: AnomalyStage;
+    }
+  | {
+      type: "REQUEST_LOOP";
+      reason: LoopEndReason;
+    };
+```
+
+这里最重要的一点是：
+
+```text
+Action / Event / Story / Knowledge
+```
+
+全部共用：
+
+```text
+ConditionDefinition
+EffectDefinition
+```
+
+以后绝不允许每个系统自己发明一套条件语言。
+
+---
+
+# `content.ts`
+
+这里定义“策划/剧情作者可以写进 YAML 的东西”。
+
+```ts
+// src/contracts/content.ts
+
+import {
+  ActionId,
+  ActionType,
+  AnomalyStage,
+  ClaimId,
+  ClueId,
+  ClueType,
+  ConditionDefinition,
+  EffectDefinition,
+  EventId,
+  EventMode,
+  EventTriggerType,
+  EventVisibility,
+  ItemId,
+  KnowledgeId,
+  KnowledgeStatus,
+  LocationId,
+  LoopConfigId,
+  MemoryId,
+  NarrativeBlockId,
+  NotebookCategory,
+  NpcId,
+  NpcLoopMemoryLevel,
+  ObjectId,
+  RepeatPolicy,
+  RequirementId,
+  StoryNodeId,
+  StoryNodeType,
+  StoryPersistence,
+  UnavailableBehavior,
+} from "./common";
+
+
+// ============================================================
+// Narrative
+// ============================================================
+
+export interface NarrativeBlockDefinition {
+  schemaVersion: 1;
+
+  id: NarrativeBlockId;
+
+  text: string;
+
+  tags?: string[];
+}
+
+export interface ConditionalNarrativeRef {
+  blockId: NarrativeBlockId;
+
+  priority?: number;
+
+  when?: ConditionDefinition;
+}
+
+export interface NarrativePresentation {
+  blocks?: NarrativeBlockId[];
+
+  variants?: Array<{
+    priority?: number;
+    when: ConditionDefinition;
+    blocks: NarrativeBlockId[];
+  }>;
+}
+
+
+// ============================================================
+// Location
+// ============================================================
+
+export interface LocationDefinition {
+  schemaVersion: 1;
+
+  id: LocationId;
+  name: string;
+
+  tags?: string[];
+
+  objectIds?: ObjectId[];
+
+  actionIds?: ActionId[];
+
+  narrative: {
+    base: NarrativeBlockId[];
+
+    modifiers?: ConditionalNarrativeRef[];
+  };
+}
+
+
+// ============================================================
+// Object
+// ============================================================
+
+export interface ObjectDefinition {
+  schemaVersion: 1;
+
+  id: ObjectId;
+  name: string;
+
+  tags?: string[];
+}
+
+
+// ============================================================
+// Item
+// ============================================================
+
+export interface ItemDefinition {
+  schemaVersion: 1;
+
+  id: ItemId;
+  name: string;
+
+  description?: string;
+
+  tags?: string[];
+}
+
+
+// ============================================================
+// NPC
+// ============================================================
+
+export interface NpcDefinition {
+  schemaVersion: 1;
+
+  id: NpcId;
+  name: string;
+
+  tags?: string[];
+
+  loopMemoryLevel?: NpcLoopMemoryLevel;
+
+  notebookLabel?: string;
+}
+
+
+// ============================================================
+// Action
+// ============================================================
+
+export interface ActionDefinition {
+  schemaVersion: 1;
+
+  id: ActionId;
+
+  type: ActionType;
+
+  label: string;
+
+  locationId?: LocationId;
+
+  targetId?: string;
+
+  conditions?: ConditionDefinition;
+
+  unavailableBehavior?: UnavailableBehavior;
+
+  cost?: {
+    timeMinutes?: number;
+  };
+
+  effects?: EffectDefinition[];
+
+  result?: NarrativePresentation;
+
+  tags?: string[];
+}
+
+
+// ============================================================
+// Event Trigger
+// ============================================================
+
+export type EventTriggerDefinition =
+  | {
+      type: EventTriggerType.ACTION;
+      actionId?: ActionId;
+    }
+  | {
+      type: EventTriggerType.TIME;
+      atMinute: number;
+    }
+  | {
+      type: EventTriggerType.ENTER_LOCATION;
+      locationId?: LocationId;
+    }
+  | {
+      type: EventTriggerType.LEAVE_LOCATION;
+      locationId?: LocationId;
+    }
+  | {
+      type: EventTriggerType.STATE_CHANGE;
+    }
+  | {
+      type: EventTriggerType.STORY;
+      storyNodeId?: StoryNodeId;
+    }
+  | {
+      type: EventTriggerType.LOOP;
+      phase: "START" | "END";
+    }
+  | {
+      type: EventTriggerType.SCHEDULED;
+    };
+
+
+// ============================================================
+// Event
+// ============================================================
+
+export interface EventDefinition {
+  schemaVersion: 1;
+
+  id: EventId;
+
+  name?: string;
+
+  trigger: EventTriggerDefinition;
+
+  conditions?: ConditionDefinition;
+
+  priority?: number;
+
+  mode?: EventMode;
+
+  visibility?: EventVisibility;
+
+  repeat: {
+    policy: RepeatPolicy;
+
+    cooldownMinutes?: number;
+  };
+
+  effects?: EffectDefinition[];
+
+  presentation?: NarrativePresentation;
+
+  tags?: string[];
+}
+
+
+// ============================================================
+// Clue
+// ============================================================
+
+export interface ClueClaimLink {
+  claimId: ClaimId;
+
+  relation: "SUPPORTS" | "CONTRADICTS";
+}
+
+export interface ClueDefinition {
+  schemaVersion: 1;
+
+  id: ClueId;
+
+  type: ClueType;
+
+  title: string;
+
+  source?: {
+    npcId?: NpcId;
+    objectId?: ObjectId;
+    locationId?: LocationId;
+  };
+
+  claimLinks?: ClueClaimLink[];
+
+  notebook: {
+    category: NotebookCategory;
+
+    subjectId?: string;
+
+    text: string;
+  };
+
+  tags?: string[];
+}
+
+
+// ============================================================
+// Claim
+// ============================================================
+
+export interface ClaimDefinition {
+  schemaVersion: 1;
+
+  id: ClaimId;
+
+  statement: string;
+
+  notebook?: {
+    category: NotebookCategory;
+    text: string;
+  };
+}
+
+
+// ============================================================
+// Memory
+// ============================================================
+
+export interface MemoryDefinition {
+  schemaVersion: 1;
+
+  id: MemoryId;
+
+  title: string;
+
+  description?: string;
+
+  unlockPresentation?: NarrativePresentation;
+}
+
+
+// ============================================================
+// Knowledge
+// ============================================================
+
+export interface KnowledgeTransitionDefinition {
+  to: KnowledgeStatus;
+
+  priority?: number;
+
+  when: ConditionDefinition;
+
+  effects?: EffectDefinition[];
+
+  presentation?: NarrativePresentation;
+}
+
+export interface KnowledgeDefinition {
+  schemaVersion: 1;
+
+  id: KnowledgeId;
+
+  title: string;
+
+  initialStatus?: KnowledgeStatus;
+
+  transitions: KnowledgeTransitionDefinition[];
+
+  notebook?: {
+    category: NotebookCategory;
+    text: string;
+  };
+}
+
+
+// ============================================================
+// Narrative Requirement
+// ============================================================
+
+export interface NarrativeRequirementDefinition {
+  schemaVersion: 1;
+
+  id: RequirementId;
+
+  description: string;
+
+  persistence: StoryPersistence;
+
+  completeWhen: ConditionDefinition;
+}
+
+
+// ============================================================
+// Story Node
+// ============================================================
+
+export interface StoryNodeDefinition {
+  schemaVersion: 1;
+
+  id: StoryNodeId;
+
+  type: StoryNodeType;
+
+  persistence: StoryPersistence;
+
+  enterWhen?: ConditionDefinition;
+
+  requirements?: RequirementId[];
+
+  unlocks?: {
+    locationIds?: LocationId[];
+    actionIds?: ActionId[];
+    eventIds?: EventId[];
+    clueIds?: ClueId[];
+  };
+
+  eventPool?: {
+    core?: EventId[];
+    optional?: EventId[];
+    ambient?: EventId[];
+  };
+
+  next?: Array<{
+    storyNodeId: StoryNodeId;
+
+    priority?: number;
+
+    when?: ConditionDefinition;
+  }>;
+
+  onEnter?: EffectDefinition[];
+
+  onComplete?: EffectDefinition[];
+}
+
+
+// ============================================================
+// World Baseline
+// ============================================================
+
+export interface WorldBaselineDefinition {
+  schemaVersion: 1;
+
+  id: string;
+
+  flags?: Record<string, boolean>;
+
+  variables?: Record<string, string | number | boolean>;
+
+  inventory?: ItemId[];
+
+  objects?: Record<
+    ObjectId,
+    {
+      locationId?: LocationId;
+
+      present?: boolean;
+
+      properties?: Record<string, string | number | boolean | null>;
+    }
+  >;
+
+  npcs?: Record<
+    NpcId,
+    {
+      alive: boolean;
+
+      locationId: LocationId;
+
+      available?: boolean;
+
+      relationship?: number;
+
+      properties?: Record<string, string | number | boolean | null>;
+    }
+  >;
+}
+
+
+// ============================================================
+// Loop Config
+// ============================================================
+
+export interface LoopSettlementRule {
+  id: string;
+
+  priority?: number;
+
+  when: ConditionDefinition;
+
+  effects: EffectDefinition[];
+}
+
+export interface LoopConfigDefinition {
+  schemaVersion: 1;
+
+  id: LoopConfigId;
+
+  startLocationId: LocationId;
+
+  startStoryNodeId: StoryNodeId;
+
+  startMinute: number;
+
+  durationMinutes: number;
+
+  worldBaselineId: string;
+
+  opening?: NarrativePresentation;
+
+  settlementRules?: LoopSettlementRule[];
+}
+
+
+// ============================================================
+// Game Config
+// ============================================================
+
+export interface GameConfigDefinition {
+  schemaVersion: 1;
+
+  id: string;
+
+  title: string;
+
+  loopConfigId: LoopConfigId;
+
+  initialLoopId: number;
+
+  clock: {
+    baseMinuteOfDay: number;
+  };
+
+  anomaly: {
+    thresholds: Array<{
+      minPressure: number;
+      stage: AnomalyStage;
+    }>;
+  };
+}
+```
+
+---
+
+# `state.ts`
+
+这是运行时状态。
+
+这里和 YAML 必须严格分开。
+
+YAML 是：
+
+> 内容定义。
+
+State 是：
+
+> 这一局现在发生到了什么状态。
+
+```ts
+// src/contracts/state.ts
+
+import {
+  ActionAvailability,
+  ActionId,
+  ActionType,
+  AnomalyStage,
+  ClaimId,
+  ClaimStatus,
+  ClueId,
+  EventId,
+  ItemId,
+  KnowledgeId,
+  KnowledgeStatus,
+  LocationId,
+  LoopEndReason,
+  MemoryId,
+  NarrativeBlockId,
+  NpcId,
+  ObjectId,
+  Primitive,
+  RequirementId,
+  StoryNodeId,
+} from "./common";
+
+
+// ============================================================
+// Runtime
+// ============================================================
+
+export interface RuntimeState {
+  currentLocationId: LocationId;
+
+  currentStoryNodeId: StoryNodeId;
+
+  loopId: number;
+
+  gameTime: number;
+
+  currentSceneEntryId: string;
+
+  currentTimeline: TimelineEntry[];
+
+  eventQueue: QueuedEvent[];
+
+  pendingLoopRequest?: {
+    reason: LoopEndReason;
+  };
+}
+
+
+// ============================================================
+// Object Runtime
+// ============================================================
+
+export interface ObjectRuntimeState {
+  locationId?: LocationId;
+
+  present: boolean;
+
+  properties: Record<string, Primitive>;
+}
+
+
+// ============================================================
+// NPC Runtime
+// ============================================================
+
+export interface NpcRuntimeState {
+  alive: boolean;
+
+  locationId: LocationId;
+
+  available: boolean;
+
+  relationship: number;
+
+  properties: Record<string, Primitive>;
+}
+
+
+// ============================================================
+// Event Runtime
+// ============================================================
+
+export interface EventRuntimeState {
+  occurrenceCount: number;
+
+  lastTriggeredMinute?: number;
+
+  lastTriggeredSceneEntryId?: string;
+}
+
+
+// ============================================================
+// World
+// ============================================================
+
+export interface WorldState {
+  flags: Record<string, boolean>;
+
+  variables: Record<string, Primitive>;
+
+  inventory: ItemId[];
+
+  objects: Record<ObjectId, ObjectRuntimeState>;
+
+  npcs: Record<NpcId, NpcRuntimeState>;
+
+  discoveredClues: ClueId[];
+
+  eventStates: Record<EventId, EventRuntimeState>;
+}
+
+
+// ============================================================
+// Knowledge / Claim
+// ============================================================
+
+export interface KnowledgeRuntimeState {
+  status: KnowledgeStatus;
+
+  changedAtLoop?: number;
+
+  changedAtMinute?: number;
+}
+
+export interface ClaimRuntimeState {
+  status: ClaimStatus;
+
+  supportingClues: ClueId[];
+
+  contradictingClues: ClueId[];
+}
+
+
+// ============================================================
+// Anomaly
+// ============================================================
+
+export interface AnomalyRuntimeState {
+  pressure: number;
+
+  stage: AnomalyStage;
+}
+
+
+// ============================================================
+// Timeline
+// ============================================================
+
+export interface TimelineEntry {
+  loopId: number;
+
+  minute: number;
+
+  type: "ACTION" | "EVENT" | "CLUE" | "SYSTEM";
+
+  refId?: string;
+
+  notebookText?: string;
+}
+
+export interface LoopTimeline {
+  loopId: number;
+
+  entries: TimelineEntry[];
+}
+
+
+// ============================================================
+// Loop Signature
+// ============================================================
+
+export interface LoopSignature {
+  loopId: number;
+
+  durationMinutes: number;
+
+  endReason: LoopEndReason;
+
+  keyActionIds: ActionId[];
+
+  triggeredEventIds: EventId[];
+
+  discoveredClueIds: ClueId[];
+
+  unlockedMemoryIds: MemoryId[];
+
+  knowledgeChanges: Array<{
+    knowledgeId: KnowledgeId;
+    from: KnowledgeStatus;
+    to: KnowledgeStatus;
+  }>;
+
+  anomalyDelta: number;
+}
+
+
+// ============================================================
+// Meta
+// ============================================================
+
+export interface MetaState {
+  memories: MemoryId[];
+
+  knowledge: Record<KnowledgeId, KnowledgeRuntimeState>;
+
+  claims: Record<ClaimId, ClaimRuntimeState>;
+
+  completedRequirements: RequirementId[];
+
+  visitedStoryNodes: StoryNodeId[];
+
+  completedStoryNodes: StoryNodeId[];
+
+  timelineHistory: LoopTimeline[];
+
+  loopHistory: LoopSignature[];
+
+  echoes: string[];
+
+  anomaly: AnomalyRuntimeState;
+
+  globallyTriggeredEvents: EventId[];
+}
+
+
+// ============================================================
+// Full State
+// ============================================================
+
+export interface GameState {
+  runtime: RuntimeState;
+
+  world: WorldState;
+
+  meta: MetaState;
+}
+
+
+// ============================================================
+// Event Queue
+// ============================================================
+
+export interface QueuedEvent {
+  queueId: string;
+
+  eventId: EventId;
+
+  dueMinute: number;
+
+  priority: number;
+
+  source?: {
+    type: "ACTION" | "EVENT" | "SYSTEM";
+    refId?: string;
+  };
+}
+
+
+// ============================================================
+// Scene View Model
+// ============================================================
+
+export interface ResolvedNarrativeBlock {
+  id: NarrativeBlockId;
+
+  text: string;
+}
+
+export interface ResolvedAction {
+  id: ActionId;
+
+  type: ActionType;
+
+  label: string;
+
+  availability: ActionAvailability;
+
+  disabledReason?: string;
+
+  timeCost: number;
+}
+
+export interface SceneViewModel {
+  locationId: LocationId;
+
+  locationName: string;
+
+  loopId: number;
+
+  gameTime: number;
+
+  narrative: ResolvedNarrativeBlock[];
+
+  npcIds: NpcId[];
+
+  actions: ResolvedAction[];
+}
+
+
+// ============================================================
+// Notebook
+// ============================================================
+
+export interface NotebookEntryView {
+  id: string;
+
+  category: string;
+
+  subjectId?: string;
+
+  text: string;
+
+  loopId?: number;
+
+  minute?: number;
+}
+
+export interface NotebookViewModel {
+  people: NotebookEntryView[];
+
+  timeline: NotebookEntryView[];
+
+  findings: NotebookEntryView[];
+
+  questions: NotebookEntryView[];
+}
+
+
+// ============================================================
+// Logs
+// ============================================================
+
+export interface GameLogEntry {
+  id: string;
+
+  kind:
+    | "ACTION"
+    | "EVENT"
+    | "EFFECT"
+    | "STORY"
+    | "KNOWLEDGE"
+    | "LOOP"
+    | "SCENE"
+    | "ERROR";
+
+  loopId: number;
+
+  minute: number;
+
+  refId?: string;
+
+  message: string;
+
+  detail?: unknown;
+}
+
+
+// ============================================================
+// Save
+// ============================================================
+
+export interface SaveGame {
+  saveVersion: "0.1.0";
+
+  createdAt: string;
+
+  updatedAt: string;
+
+  state: GameState;
+}
+
+
+// ============================================================
+// Engine Result
+// ============================================================
+
+export interface ActionExecutionResult {
+  success: boolean;
+
+  actionId: ActionId;
+
+  state: GameState;
+
+  scene: SceneViewModel;
+
+  presentation: ResolvedNarrativeBlock[];
+
+  logs: GameLogEntry[];
+}
+```
+
+---
+
+# 一个重要决定：State 不使用 `Set`
+
+虽然从程序设计来说：
+
+```ts
+Set<string>
+```
+
+很好用。
+
+但我们第一版全部使用：
+
+```ts
+string[]
+```
+
+原因是：
+
+```text
+GameState
+↓
+JSON.stringify()
+↓
+LocalStorage
+```
+
+可以直接保存。
+
+否则每次存档还要做序列化转换。
+
+---
+
+# ② V0.1 YAML Schema
+
+目录正式建议：
+
+```text
+content/
+├── game.yaml
+│
+├── world/
+│   └── baseline.yaml
+│
+├── locations/
+│   ├── guard_room.yaml
+│   ├── corridor.yaml
+│   └── warehouse.yaml
+│
+├── objects/
+│   └── *.yaml
+│
+├── items/
+│   └── *.yaml
+│
+├── npcs/
+│   └── *.yaml
+│
+├── actions/
+│   └── *.yaml
+│
+├── events/
+│   └── *.yaml
+│
+├── clues/
+│   └── *.yaml
+│
+├── claims/
+│   └── *.yaml
+│
+├── memories/
+│   └── *.yaml
+│
+├── knowledge/
+│   └── *.yaml
+│
+├── requirements/
+│   └── *.yaml
+│
+├── story/
+│   └── *.yaml
+│
+├── narrative/
+│   └── *.yaml
+│
+└── loops/
+    └── main_loop.yaml
+```
+
+这里我建议：
+
+> **一条 Action / Event / Clue / Knowledge 一个 YAML 文件。**
+
+V0.1量不大，调试和 Git diff 都舒服。
+
+Narrative Block 可以一文件放多个吗？
+
+第一版我仍建议一个文件一个 Block。
+
+后面嫌碎再支持 bundle。
+
+---
+
+# `game.yaml`
+
+```yaml
+schemaVersion: 1
+
+id: vertical_slice_v01
+
+title: "Vertical Slice V0.1"
+
+loopConfigId: main_loop
+
+initialLoopId: 1
+
+clock:
+  # 23:10 = 23 * 60 + 10
+  baseMinuteOfDay: 1390
+
+anomaly:
+  thresholds:
+    - minPressure: 0
+      stage: STABLE
+
+    - minPressure: 1
+      stage: SUBTLE
+
+    - minPressure: 3
+      stage: DISTORTED
+
+    - minPressure: 6
+      stage: UNSTABLE
+
+    - minPressure: 10
+      stage: COLLAPSE
+```
+
+V0.1实际可能只跑：
+
+```text
+STABLE
+SUBTLE
+DISTORTED
+```
+
+但 Enum 可以提前完整保留。
+
+---
+
+# `world/baseline.yaml`
+
+```yaml
+schemaVersion: 1
+
+id: world_baseline_v01
+
+flags:
+  warehouseLocked: true
+  powerOn: true
+  knockTriggered: false
+
+variables:
+  npcASuspicion: 0
+
+inventory: []
+
+objects:
+
+  radio:
+    locationId: guard_room
+    present: true
+    properties:
+      state: normal
+      investigated: false
+
+  duty_log:
+    locationId: guard_room
+    present: true
+    properties:
+      investigated: false
+
+  warehouse_door:
+    locationId: corridor
+    present: true
+    properties:
+      locked: true
+
+npcs:
+
+  npc_a:
+    alive: true
+
+    locationId: guard_room
+
+    available: true
+
+    relationship: 0
+
+    properties:
+      knowsWarehouseSecret: true
+```
+
+这里有一个规则：
+
+> **Baseline 写“新循环正常世界是什么样”。**
+
+不能写上一轮遗留结果。
+
+---
+
+# Location Schema
+
+例如：
+
+```yaml
+schemaVersion: 1
+
+id: guard_room
+
+name: 值班室
+
+tags:
+  - indoor
+
+objectIds:
+  - radio
+  - duty_log
+
+actionIds:
+  - observe_radio
+  - investigate_radio
+  - investigate_duty_log
+  - talk_npc_a
+  - move_guard_room_to_corridor
+
+narrative:
+
+  base:
+    - guard_room_base
+
+  modifiers:
+
+    - blockId: guard_room_npc_a_present
+      priority: 20
+
+      when:
+        op: NPC_AT
+        npcId: npc_a
+        locationId: guard_room
+
+    - blockId: guard_room_power_off
+      priority: 50
+
+      when:
+        op: FLAG_EQUALS
+        key: powerOn
+        value: false
+```
+
+注意：
+
+Location没有：
+
+```yaml
+npcIds:
+  - npc_a
+```
+
+因为：
+
+> NPC位置属于 World State。
+
+Scene Resolver从：
+
+```text
+world.npcs
+```
+
+计算谁在这里。
+
+---
+
+# Object Schema
+
+```yaml
+schemaVersion: 1
+
+id: radio
+
+name: 无线电
+
+tags:
+  - interactable
+  - electronic
+```
+
+Object Definition只说明：
+
+> 这是什么东西。
+
+Object Runtime State说明：
+
+> 它现在怎么样。
+
+---
+
+# Item Schema
+
+虽然 Vertical Slice 很可能暂时不用 Inventory，但接口保留：
+
+```yaml
+schemaVersion: 1
+
+id: warehouse_key
+
+name: 仓库钥匙
+
+description: 一把普通的旧钥匙。
+
+tags:
+  - key
+```
+
+---
+
+# NPC Schema
+
+```yaml
+schemaVersion: 1
+
+id: npc_a
+
+name: NPC-A
+
+tags:
+  - major
+
+loopMemoryLevel: 0
+
+notebookLabel: NPC-A
+```
+
+注意：
+
+```yaml
+alive:
+location:
+relationship:
+```
+
+不应该出现在 NPC Definition。
+
+那是 `WorldBaseline` / Runtime State。
+
+---
+
+# Action Schema
+
+一个完整调查行为：
+
+```yaml
+schemaVersion: 1
+
+id: investigate_radio
+
+type: INVESTIGATE
+
+label: 调查无线电
+
+locationId: guard_room
+
+targetId: radio
+
+conditions:
+  op: ALL
+
+  conditions:
+
+    - op: OBJECT_PROPERTY_EQUALS
+      objectId: radio
+      key: investigated
+      value: false
+
+    - op: OBJECT_PROPERTY_EQUALS
+      objectId: radio
+      key: state
+      value: normal
+
+unavailableBehavior: HIDDEN
+
+cost:
+  timeMinutes: 5
+
+effects:
+
+  - type: SET_OBJECT_PROPERTY
+    objectId: radio
+    key: investigated
+    value: true
+
+result:
+  blocks:
+    - investigate_radio_result
+
+tags:
+  - radio
+```
+
+---
+
+# MOVE Action
+
+所有移动依然是 Action：
+
+```yaml
+schemaVersion: 1
+
+id: move_guard_room_to_corridor
+
+type: MOVE
+
+label: 前往走廊
+
+locationId: guard_room
+
+cost:
+  timeMinutes: 2
+
+effects:
+
+  - type: MOVE_PLAYER
+    locationId: corridor
+```
+
+Effect Engine 修改：
+
+```text
+currentLocation
+```
+
+然后 GameController负责：
+
+```text
+LEAVE_LOCATION
+↓
+MOVE
+↓
+ENTER_LOCATION
+```
+
+对应 Event Trigger。
+
+---
+
+# WAIT Action
+
+V0.1不用做自由输入等待时间。
+
+直接几个预设：
+
+```yaml
+schemaVersion: 1
+
+id: wait_5_minutes
+
+type: WAIT
+
+label: 等待5分钟
+
+cost:
+  timeMinutes: 5
+```
+
+以后再做：
+
+```text
+等待 1 / 5 / 10 / 自定义
+```
+
+---
+
+# MEMORY Action
+
+```yaml
+schemaVersion: 1
+
+id: memory_warn_npc_a_about_knock
+
+type: MEMORY
+
+label: "【记忆】告诉NPC-A：23:30仓库会传来敲门声"
+
+locationId: guard_room
+
+targetId: npc_a
+
+conditions:
+
+  op: ALL
+
+  conditions:
+
+    - op: MEMORY_EXISTS
+      memoryId: knows_knock_time
+
+    - op: NPC_AT
+      npcId: npc_a
+      locationId: guard_room
+
+unavailableBehavior: HIDDEN
+
+cost:
+  timeMinutes: 2
+
+effects:
+
+  - type: SET_FLAG
+    key: warnedNpcA
+    value: true
+
+result:
+  blocks:
+    - memory_warn_npc_a_result
+```
+
+这就证明我们之前的设计：
+
+> Memory Action 在技术上仍然就是普通 Action。
+
+---
+
+# Event Schema
+
+23:30敲门：
+
+```yaml
+schemaVersion: 1
+
+id: event_knock_2330
+
+name: 23:30敲门
+
+trigger:
+  type: TIME
+  atMinute: 20
+
+conditions:
+
+  op: ALL
+
+  conditions:
+
+    - op: EVENT_TRIGGERED
+      eventId: event_knock_2330
+      scope: CURRENT_LOOP
+
+      # 注意实际 ConditionEvaluator 这里需要支持反向，
+      # 正式内容里更推荐用 NOT：
+```
+
+正确形式应该写：
+
+```yaml
+conditions:
+
+  op: NOT
+
+  condition:
+    op: EVENT_TRIGGERED
+    eventId: event_knock_2330
+    scope: CURRENT_LOOP
+```
+
+实际上由于：
+
+```yaml
+repeat:
+  policy: ONCE_LOOP
+```
+
+已经能防重，所以甚至可以不写这个 Condition。
+
+最终推荐：
+
+```yaml
+schemaVersion: 1
+
+id: event_knock_2330
+
+name: 23:30敲门
+
+trigger:
+  type: TIME
+  atMinute: 20
+
+priority: 80
+
+mode: INTERRUPTING
+
+visibility: VISIBLE
+
+repeat:
+  policy: ONCE_LOOP
+
+effects:
+
+  - type: SET_FLAG
+    key: knockTriggered
+    value: true
+
+presentation:
+
+  variants:
+
+    - priority: 100
+
+      when:
+        op: CURRENT_LOCATION_IS
+        locationId: warehouse
+
+      blocks:
+        - knock_heard_from_outside
+
+    - priority: 50
+
+      when:
+        op: CURRENT_LOCATION_IS
+        locationId: corridor
+
+      blocks:
+        - knock_heard_from_inside
+
+    - priority: 10
+
+      when:
+        op: CURRENT_LOCATION_IS
+        locationId: guard_room
+
+      blocks:
+        - npc_a_reacts_to_knock
+```
+
+这一点非常重要：
+
+> **同一个 Event，只有一份逻辑；根据玩家所在位置选择不同 Presentation。**
+
+---
+
+# Hidden Event
+
+例如NPC偷偷移动：
+
+```yaml
+schemaVersion: 1
+
+id: event_npc_a_moves
+
+trigger:
+  type: TIME
+  atMinute: 12
+
+priority: 30
+
+mode: PASSIVE
+
+visibility: HIDDEN
+
+repeat:
+  policy: ONCE_LOOP
+
+effects:
+
+  - type: MOVE_NPC
+    npcId: npc_a
+    locationId: corridor
+```
+
+没有 Presentation。
+
+玩家只能从世界状态发现：
+
+> NPC-A不见了。
+
+---
+
+# Scheduled Event
+
+定义：
+
+```yaml
+schemaVersion: 1
+
+id: event_radio_reply
+
+trigger:
+  type: SCHEDULED
+
+priority: 60
+
+mode: INTERRUPTING
+
+visibility: VISIBLE
+
+repeat:
+  policy: ONCE_LOOP
+
+presentation:
+  blocks:
+    - radio_reply
+```
+
+另外一个 Action / Event：
+
+```yaml
+effects:
+
+  - type: SCHEDULE_EVENT
+    eventId: event_radio_reply
+    delayMinutes: 5
+```
+
+EventQueue 产生：
+
+```text
+dueMinute = currentTime + 5
+```
+
+---
+
+# Clue Schema
+
+值班记录：
+
+```yaml
+schemaVersion: 1
+
+id: clue_warehouse_locked
+
+type: EVIDENCE
+
+title: 仓库检查记录
+
+source:
+  objectId: duty_log
+  locationId: guard_room
+
+claimLinks:
+
+  - claimId: claim_warehouse_locked_at_2200
+    relation: SUPPORTS
+
+notebook:
+
+  category: FINDINGS
+
+  text: "值班记录显示：仓库在22:00完成检查，并从外部上锁。"
+
+tags:
+  - warehouse
+```
+
+---
+
+# Testimony Clue
+
+```yaml
+schemaVersion: 1
+
+id: clue_npc_a_says_empty
+
+type: TESTIMONY
+
+title: NPC-A关于仓库的说法
+
+source:
+  npcId: npc_a
+
+claimLinks:
+
+  - claimId: claim_nobody_inside_warehouse
+    relation: SUPPORTS
+
+notebook:
+
+  category: PEOPLE
+
+  subjectId: npc_a
+
+  text: "NPC-A声称：23:30时仓库里面不可能有人。"
+```
+
+注意措辞：
+
+> **NPC-A声称。**
+
+不是：
+
+> 仓库没人。
+
+---
+
+# Temporal Clue
+
+```yaml
+schemaVersion: 1
+
+id: clue_knock_at_2330
+
+type: TEMPORAL
+
+title: 23:30的敲门声
+
+source:
+  locationId: corridor
+
+claimLinks:
+
+  - claimId: claim_knock_occurs_at_2330
+    relation: SUPPORTS
+
+notebook:
+
+  category: TIMELINE
+
+  text: "23:30，仓库方向出现三次敲击。"
+```
+
+---
+
+# Loop Discrepancy
+
+第三轮的时候：
+
+```yaml
+schemaVersion: 1
+
+id: clue_knock_location_changed
+
+type: LOOP_DISCREPANCY
+
+title: 敲门声的位置发生变化
+
+claimLinks:
+
+  - claimId: claim_knock_rule_is_stable
+    relation: CONTRADICTS
+
+notebook:
+
+  category: TIMELINE
+
+  text: "这一轮，敲门声没有按照之前的规律出现。"
+```
+
+---
+
+# Claim Schema
+
+```yaml
+schemaVersion: 1
+
+id: claim_nobody_inside_warehouse
+
+statement: "23:30时仓库内部没有人。"
+
+notebook:
+
+  category: QUESTIONS
+
+  text: "23:30时，仓库里面真的没有人吗？"
+```
+
+Claim永远是：
+
+> 一条关于世界的陈述。
+
+它可以同时拥有：
+
+```text
+Supporting Clues
+Contradicting Clues
+```
+
+于是：
+
+```text
+0 support / 0 contradiction
+→ UNKNOWN
+
+有support
+→ SUPPORTED
+
+只有contradiction
+→ CONTRADICTED
+
+两边都有
+→ DISPUTED
+```
+
+这个状态可以由 ClaimResolver自动计算。
+
+---
+
+# Memory Schema
+
+```yaml
+schemaVersion: 1
+
+id: knows_knock_time
+
+title: 23:30的敲门声
+
+description: "你记得，上一轮23:30左右仓库曾传来三次敲击。"
+
+unlockPresentation:
+  blocks:
+    - memory_knock_time_unlocked
+```
+
+Memory只是：
+
+> 玩家跨循环保留的一项认知能力标记。
+
+不要把所有 Clue 都变成 Memory。
+
+---
+
+# Knowledge Schema
+
+这是我比较喜欢的一部分。
+
+```yaml
+schemaVersion: 1
+
+id: knowledge_knock_time
+
+title: 敲门事件时间规律
+
+initialStatus: UNKNOWN
+
+transitions:
+
+  - to: SUSPECTED
+
+    priority: 10
+
+    when:
+      op: CLUE_DISCOVERED
+      clueId: clue_knock_at_2330
+
+  - to: CONFIRMED
+
+    priority: 20
+
+    when:
+      op: ALL
+
+      conditions:
+
+        - op: CLUE_DISCOVERED
+          clueId: clue_knock_at_2330
+
+        - op: LOOP_COMPARE
+          comparator: GTE
+          value: 2
+
+    effects:
+
+      - type: UNLOCK_MEMORY
+        memoryId: knows_knock_time
+
+  - to: UNSTABLE
+
+    priority: 100
+
+    when:
+      op: CLUE_DISCOVERED
+      clueId: clue_knock_location_changed
+
+notebook:
+
+  category: FINDINGS
+
+  text: "敲门事件似乎与某个固定时间有关。"
+```
+
+这里要规定：
+
+> `KnowledgeResolver` 每次状态变化后检查 transition。
+
+同一次满足多个 transition：
+
+```text
+priority最高者胜出
+```
+
+---
+
+# Narrative Requirement Schema
+
+例如：
+
+```yaml
+schemaVersion: 1
+
+id: requirement_understand_knock
+
+description: 玩家已经意识到23:30附近会发生异常事件。
+
+persistence: META
+
+completeWhen:
+
+  op: ANY
+
+  conditions:
+
+    - op: KNOWLEDGE_STATUS
+      knowledgeId: knowledge_knock_time
+      comparator: GTE
+      status: SUPPORTED
+
+    - op: MEMORY_EXISTS
+      memoryId: knows_knock_time
+```
+
+这个就是 Story Graph 最重要的：
+
+> **我们要求玩家理解什么。**
+
+而不是：
+
+> 必须播放哪一个剧情。
+
+---
+
+# Story Node Schema
+
+第一阶段：
+
+```yaml
+schemaVersion: 1
+
+id: story_initial_unknown
+
+type: MAIN
+
+persistence: META
+
+requirements:
+  - requirement_understand_knock
+
+eventPool:
+
+  core:
+    - event_knock_2330
+
+  optional:
+    - event_npc_a_moves
+
+next:
+
+  - storyNodeId: story_exploit_loop
+
+    priority: 100
+
+    when:
+      op: REQUIREMENT_COMPLETE
+      requirementId: requirement_understand_knock
+```
+
+第二阶段：
+
+```yaml
+schemaVersion: 1
+
+id: story_exploit_loop
+
+type: MAIN
+
+persistence: META
+
+enterWhen:
+
+  op: MEMORY_EXISTS
+  memoryId: knows_knock_time
+
+unlocks:
+
+  actionIds:
+    - memory_warn_npc_a_about_knock
+
+next:
+
+  - storyNodeId: story_rule_breaks
+
+    when:
+      op: ANOMALY_STAGE
+      comparator: GTE
+      stage: DISTORTED
+```
+
+---
+
+# Narrative Block Schema
+
+最简单的内容文件：
+
+```yaml
+schemaVersion: 1
+
+id: guard_room_base
+
+text: |
+  值班室很小。
+
+  墙边摆着一张掉漆的木桌，桌上的无线电偶尔传出轻微的电流声。
+
+tags:
+  - location
+  - guard_room
+```
+
+敲门：
+
+```yaml
+schemaVersion: 1
+
+id: knock_heard_from_inside
+
+text: |
+  三声很轻的敲击从仓库门后传来。
+
+  咚。
+
+  过了一会儿，又是一声。
+
+  咚。
+```
+
+V0.1：
+
+> Narrative Block暂时不支持变量插值。
+
+不要现在搞：
+
+```text
+{{npc.name}}
+{{time}}
+```
+
+真需要以后再加。
+
+---
+
+# Loop Config Schema
+
+```yaml
+schemaVersion: 1
+
+id: main_loop
+
+startLocationId: guard_room
+
+startStoryNodeId: story_initial_unknown
+
+startMinute: 0
+
+durationMinutes: 30
+
+worldBaselineId: world_baseline_v01
+
+opening:
+
+  variants:
+
+    - priority: 100
+
+      when:
+        op: LOOP_COMPARE
+        comparator: GTE
+        value: 2
+
+      blocks:
+        - loop_opening_return
+
+    - priority: 1
+
+      when:
+        op: LOOP_COMPARE
+        comparator: EQ
+        value: 1
+
+      blocks:
+        - loop_opening_first
+
+settlementRules:
+
+  - id: settlement_knock_memory
+
+    priority: 50
+
+    when:
+      op: KNOWLEDGE_STATUS
+      knowledgeId: knowledge_knock_time
+      comparator: GTE
+      status: SUPPORTED
+
+    effects:
+
+      - type: UNLOCK_MEMORY
+        memoryId: knows_knock_time
+
+  - id: settlement_anomaly_after_interference
+
+    priority: 40
+
+    when:
+      op: FLAG_EQUALS
+      key: playerInterferedWithKnock
+      value: true
+
+    effects:
+
+      - type: CHANGE_ANOMALY_PRESSURE
+        delta: 2
+```
+
+这里正好体现：
+
+```text
+Loop Settlement
+→ Memory
+→ Anomaly
+→ World Rebuild
+```
+
+---
+
+# Condition YAML 的统一写法
+
+以后所有内容作者只需要掌握三种组合器：
+
+```yaml
+op: ALL
+conditions: []
+```
+
+```yaml
+op: ANY
+conditions: []
+```
+
+```yaml
+op: NOT
+condition: {}
+```
+
+剩下全部是 Leaf Condition。
+
+例如：
+
+```yaml
+op: ALL
+
+conditions:
+
+  - op: TIME_COMPARE
+    comparator: GTE
+    minute: 15
+
+  - op: NPC_ALIVE
+    npcId: npc_a
+    value: true
+
+  - op: NOT
+    condition:
+      op: CLUE_DISCOVERED
+      clueId: clue_x
+```
+
+这套已经足够支持 Vertical Slice。
+
+---
+
+# Effect YAML 也只有一个规范
+
+例如：
+
+```yaml
+effects:
+
+  - type: SET_FLAG
+    key: warehouseOpened
+    value: true
+
+  - type: DISCOVER_CLUE
+    clueId: clue_warehouse_open
+
+  - type: MOVE_NPC
+    npcId: npc_a
+    locationId: warehouse
+
+  - type: SCHEDULE_EVENT
+    eventId: event_x
+    delayMinutes: 5
+```
+
+策划不允许写：
+
+```yaml
+script: |
+  state.x = ...
+```
+
+**V0.1明确禁止 Script Effect。**
+
+以后真的出现结构化 Effect 解决不了的东西，我们宁可新增一种 Effect Type，也不要开放任意脚本。
+
+这是很重要的长期维护原则。
+
+---
+
+# ContentRegistry
+
+ContentLoader把所有 YAML加载以后，最终形成：
+
+```ts
+export interface ContentRegistry {
+  game: GameConfigDefinition;
+
+  loopConfigs: Map<string, LoopConfigDefinition>;
+
+  worldBaselines: Map<string, WorldBaselineDefinition>;
+
+  locations: Map<string, LocationDefinition>;
+
+  objects: Map<string, ObjectDefinition>;
+
+  items: Map<string, ItemDefinition>;
+
+  npcs: Map<string, NpcDefinition>;
+
+  actions: Map<string, ActionDefinition>;
+
+  events: Map<string, EventDefinition>;
+
+  clues: Map<string, ClueDefinition>;
+
+  claims: Map<string, ClaimDefinition>;
+
+  memories: Map<string, MemoryDefinition>;
+
+  knowledge: Map<string, KnowledgeDefinition>;
+
+  requirements: Map<string, NarrativeRequirementDefinition>;
+
+  storyNodes: Map<string, StoryNodeDefinition>;
+
+  narrativeBlocks: Map<string, NarrativeBlockDefinition>;
+}
+```
+
+所以运行过程中：
+
+```ts
+registry.actions.get("investigate_radio");
+```
+
+永远拿到的是已经：
+
+```text
+加载
+↓
+Schema校验
+↓
+引用完整性校验
+```
+
+之后的数据。
+
+Engine不直接读 YAML。
+
+---
+
+# Content Validator V0.1 必须检查什么
+
+这一版我建议至少做这些：
+
+```text
+所有ID唯一
+
+Location.actionIds
+→ Action存在
+
+Location.objectIds
+→ Object存在
+
+Action.locationId
+→ Location存在
+
+Action里的Effect引用
+→ 目标存在
+
+Event引用Action/NPC/Location
+→ 存在
+
+Clue.claimLinks
+→ Claim存在
+
+Knowledge Effect里的Memory
+→ Memory存在
+
+Story Requirement
+→ Requirement存在
+
+Story next node
+→ StoryNode存在
+
+Narrative Block引用
+→ Block存在
+
+Loop startLocation
+→ Location存在
+
+Loop worldBaseline
+→ Baseline存在
+```
+
+另外还有几个语义检查：
+
+```text
+COOLDOWN
+必须有 cooldownMinutes
+
+TIME Event
+必须有 atMinute
+
+KNOWLEDGE transition
+不能 transitions = []
+
+Location
+必须至少有一个base narrative
+```
+
+---
+
+# 我还建议加一个引用循环检查
+
+特别是：
+
+```text
+Event A
+↓
+Effect schedule Event B
+
+Event B
+↓
+Effect schedule Event A
+```
+
+静态不一定全部能发现，但至少可以 Warning。
+
+Story Graph也可以检查：
+
+```text
+孤立Node
+永远无法进入Node
+不存在入口的OPTIONAL Node
+```
+
+先 Warning，不阻塞游戏。
+
+---
+
+# V0.1 的执行顺序现在也能彻底确定
+
+玩家点一个 Action：
+
+```text
+GameController.performAction(actionId)
+              │
+              ▼
+      ActionDefinition
+              │
+       ConditionEvaluator
+              │
+              ▼
+       snapshot State
+              │
+              ▼
+        Time Advance
+              │
+      ┌───────┴────────┐
+      ▼                ▼
+TIME Events       Scheduled Events
+      │                │
+      └───────┬────────┘
+              ▼
+         EffectEngine
+              │
+              ▼
+        Action Effects
+              │
+              ▼
+     ACTION / STATE Events
+              │
+              ▼
+      KnowledgeResolver
+              │
+              ▼
+       ClaimResolver
+              │
+              ▼
+    RequirementResolver
+              │
+              ▼
+       StoryResolver
+              │
+              ▼
+      Loop Request?
+       │         │
+      NO        YES
+       │         │
+       │    LoopManager
+       │         │
+       │    Settlement
+       │         │
+       │    World Rebuild
+       │         │
+       └────┬────┘
+            ▼
+       SceneResolver
+            │
+            ▼
+      SceneViewModel
+            │
+            ▼
+           React
+```
+
+这一张以后基本可以直接放进项目 README。
+
+---
+
+# 还有两个我现在建议直接锁死的工程规则
+
+**第一条：Resolver 不修改 State。**
+
+例如：
+
+```ts
+sceneResolver.resolve(state)
+knowledgeResolver.evaluate(state)
+```
+
+`evaluate` 可以返回：
+
+```text
+应该发生什么变化
+```
+
+真正写 State 的只能是：
+
+```text
+EffectEngine
+GameController
+LoopManager
+```
+
+尽可能防止“读状态时偷偷改状态”。
+
+**第二条：所有改变必须可记录。**
+
+禁止：
+
+```ts
+state.world.flags.x = true;
+```
+
+业务代码直接这么写。
+
+应该走：
+
+```ts
+effectEngine.apply({
+  type: "SET_FLAG",
+  key: "x",
+  value: true,
+});
+```
+
+这样以后才能做到：
+
+```text
+Debug Log
+Undo
+Replay
+State Diff
+自动测试
+```
+
+这对我们这种状态驱动游戏价值非常高。
+
+---
+
+# 至此 V0.1 的数据层基本可以锁版
+
+现在已经不是“设计概念”了，而是可以真正开始写：
+
+```text
+contracts
+↓
+ContentLoader
+↓
+ContentValidator
+↓
+StateFactory
+↓
+ConditionEvaluator
+↓
+EffectEngine
+```
+
+的程度。
+
+我建议实际开发的**第一个 commit**甚至先不碰 React。
+
+先做：
+
+```text
+game-engine/
+├── contracts
+├── yaml loader
+├── validator
+├── baseline state factory
+├── condition evaluator
+└── effect engine
+```
+
+然后写一个测试：
+
+```ts
+expect(conditionEvaluator.evaluate({
+  op: "MEMORY_EXISTS",
+  memoryId: "knows_knock_time"
+}, state)).toBe(true);
+```
+
+以及：
+
+```ts
+effectEngine.apply({
+  type: "SET_FLAG",
+  key: "warehouseLocked",
+  value: false
+});
+```
+
+确认 State 正确变化。
+
+**先把“规则机器”跑起来，再做UI。**
+
+这是我认为目前最稳的开发起点。
